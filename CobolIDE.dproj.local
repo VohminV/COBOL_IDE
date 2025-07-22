@@ -1,0 +1,11 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<BorlandProject>
+  <Transactions>
+    <Transaction>2025.07.22 08:28:49.222,=C:\Users\Viktor\Documents\Embarcadero\Studio\Projects\Unit4.pas</Transaction>
+    <Transaction>2025.07.22 08:30:28.038,E:\Source\COBOL_IDE\Main.dfm=C:\Users\Viktor\Documents\Embarcadero\Studio\Projects\Unit4.dfm</Transaction>
+    <Transaction>2025.07.22 08:30:28.038,E:\Source\COBOL_IDE\Main.pas=C:\Users\Viktor\Documents\Embarcadero\Studio\Projects\Unit4.pas</Transaction>
+    <Transaction>2025.07.22 08:30:37.229,E:\Source\COBOL_IDE\CobolIDE.dproj=C:\Users\Viktor\Documents\Embarcadero\Studio\Projects\Project3.dproj</Transaction>
+    <Transaction>2025.07.22 08:35:54.926,=E:\Source\COBOL_IDE\Unit1.pas</Transaction>
+    <Transaction>2025.07.22 08:36:09.209,E:\Source\COBOL_IDE\CobolHighlighter.pas=E:\Source\COBOL_IDE\Unit1.pas</Transaction>
+  </Transactions>
+</BorlandProject>
