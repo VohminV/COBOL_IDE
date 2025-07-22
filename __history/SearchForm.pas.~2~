@@ -1,0 +1,83 @@
+﻿unit SearchForm;
+
+interface
+
+uses
+  Winapi.Windows, System.SysUtils, System.Classes, Vcl.Forms,
+  Vcl.StdCtrls, Vcl.Controls, Vcl.ComCtrls;
+
+type
+  TSearchForm = class(TForm)
+    EditSearch: TEdit;
+    btNext: TButton;
+    procedure btNextClick(Sender: TObject);
+    procedure FormCreate(Sender: TObject);
+  private
+    FEditor: TRichEdit;
+    FLastIndex: Integer;
+    FLastText: string;
+  public
+    procedure Init(Editor: TRichEdit);
+    procedure FindNext;
+  end;
+
+var
+  SearchForm: TSearchForm;
+
+implementation
+
+{$R *.dfm}
+
+uses
+  StrUtils;
+
+procedure TSearchForm.FormCreate(Sender: TObject);
+begin
+  FLastIndex := 0;
+  FLastText := '';
+end;
+
+procedure TSearchForm.Init(Editor: TRichEdit);
+begin
+  FEditor := Editor;
+end;
+
+procedure TSearchForm.FindNext;
+var
+  EditorText, SearchText: string;
+  FoundPos: Integer;
+begin
+  if not Assigned(FEditor) then Exit;
+
+  SearchText := EditSearch.Text;
+  if SearchText = '' then Exit;
+
+  if SearchText <> FLastText then
+  begin
+    FLastText := SearchText;
+    FLastIndex := 0;
+  end;
+
+  EditorText := FEditor.Text;
+  FoundPos := PosEx(SearchText, EditorText, FLastIndex + 1);
+
+  if FoundPos > 0 then
+  begin
+    FEditor.SelStart := FoundPos - 1;
+    FEditor.SelLength := Length(SearchText);
+    FEditor.SetFocus;
+    FLastIndex := FoundPos;
+  end
+  else
+  begin
+    Application.MessageBox('Больше вхождений не найдено.', 'Поиск', MB_ICONINFORMATION);
+    FLastIndex := 0;
+  end;
+end;
+
+procedure TSearchForm.btNextClick(Sender: TObject);
+begin
+  FindNext;
+end;
+
+end.

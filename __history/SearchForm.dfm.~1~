@@ -1,0 +1,24 @@
+object SearchForm: TSearchForm
+  BorderStyle = bsToolWindow
+  Caption = 'Поиск'
+  ClientHeight = 50
+  ClientWidth = 250
+  Position = poMainFormCenter
+  OnCreate = FormCreate
+  object EditSearch: TEdit
+    Left = 8
+    Top = 12
+    Width = 150
+    Height = 21
+    TabOrder = 0
+  end
+  object btNext: TButton
+    Left = 170
+    Top = 10
+    Width = 70
+    Height = 25
+    Caption = 'Найти'
+    TabOrder = 1
+    OnClick = btNextClick
+  end
+end

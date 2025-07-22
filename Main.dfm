@@ -1,9 +1,9 @@
-object CobolIDE: TCobolIDE
+object FCobolIDE: TFCobolIDE
   Left = 0
   Top = 0
   Align = alClient
   AutoSize = True
-  Caption = 'CobolIDE'
+  Caption = 'FCobolIDE'
   ClientHeight = 840
   ClientWidth = 1141
   Color = clBtnFace
@@ -32,7 +32,6 @@ object CobolIDE: TCobolIDE
     ScrollBars = ssVertical
     TabOrder = 0
     OnKeyDown = CodeEditorKeyDown
-    ExplicitHeight = 840
   end
   object CompileLog: TMemo
     Left = 0

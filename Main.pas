@@ -6,10 +6,10 @@ uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
   System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ComCtrls, Vcl.Menus,
-  CobolHighlighter, Clipbrd, Vcl.ExtCtrls, System.IOUtils;
+  CobolHighlighter, Clipbrd, Vcl.ExtCtrls, System.IOUtils, SearchForm;
 
 type
-  TCobolIDE = class(TForm)
+  TFCobolIDE = class(TForm)
     MainMenu1: TMainMenu;
     CodeEditor: TRichEdit;
     N1: TMenuItem;
@@ -35,19 +35,20 @@ type
   end;
 
 var
-  CobolIDE: TCobolIDE;
+  FCobolIDE: TFCobolIDE;
   HL: TCobolHighlighter;
+  SearchText: TfSearch;
 
 implementation
 
 {$R *.dfm}
 
-procedure TCobolIDE.btClearClick(Sender: TObject);
+procedure TFCobolIDE.btClearClick(Sender: TObject);
 begin
   CodeEditor.Clear;
 end;
 
-procedure TCobolIDE.Run;
+procedure TFCobolIDE.Run;
 var
   WorkDir, ExeFile, CmdLine: string;
 begin
@@ -65,7 +66,7 @@ begin
   WinExec(PAnsiChar(AnsiString(CmdLine)), SW_SHOW);
 end;
 
-procedure TCobolIDE.btCompileClickClick(Sender: TObject);
+procedure TFCobolIDE.btCompileClickClick(Sender: TObject);
 var
   WorkDir, SourceFile, ExeFile, CmdLine: string;
   StartupInfo: TStartupInfo;
@@ -118,14 +119,16 @@ begin
     end
     else
     begin
-      CompileLog.Lines.Add('Компиляция завершилась с ошибками. Посмотрите сообщения выше.');
+      CompileLog.Lines.Add
+        ('Компиляция завершилась с ошибками. Посмотрите сообщения выше.');
     end;
   end
   else
-    CompileLog.Lines.Text := 'Не удалось запустить компиляцию. Проверьте доступность cobc.';
+    CompileLog.Lines.Text :=
+      'Не удалось запустить компиляцию. Проверьте доступность cobc.';
 end;
 
-procedure TCobolIDE.btOpenClick(Sender: TObject);
+procedure TFCobolIDE.btOpenClick(Sender: TObject);
 var
   OpenDialog: TOpenDialog;
 begin
@@ -150,7 +153,7 @@ begin
   end;
 end;
 
-procedure TCobolIDE.btSaveClick(Sender: TObject);
+procedure TFCobolIDE.btSaveClick(Sender: TObject);
 var
   SaveDialog: TSaveDialog;
   FileName: string;
@@ -177,7 +180,7 @@ begin
   end;
 end;
 
-procedure TCobolIDE.CodeEditorKeyDown(Sender: TObject; var Key: Word;
+procedure TFCobolIDE.CodeEditorKeyDown(Sender: TObject; var Key: Word;
   Shift: TShiftState);
 var
   ClipboardText: string;
@@ -193,19 +196,31 @@ begin
       Key := 0;
     end;
   end;
+
+  if (Key = Ord('F')) and (ssCtrl in Shift) then
+  begin
+    SearchText.Show;
+    SearchText.EditSearch.SetFocus;
+  end
+  else if Key = VK_F3 then
+  begin
+    SearchText.FindNext;
+  end;
 end;
 
-procedure TCobolIDE.FormCreate(Sender: TObject);
+procedure TFCobolIDE.FormCreate(Sender: TObject);
 begin
   HL := TCobolHighlighter.Create(CodeEditor);
+  SearchText := TfSearch.Create(Self);
+  SearchText.Init(CodeEditor);
 end;
 
-procedure TCobolIDE.FormDestroy(Sender: TObject);
+procedure TFCobolIDE.FormDestroy(Sender: TObject);
 begin
   HL.Free;
 end;
 
-procedure TCobolIDE.FormResize(Sender: TObject);
+procedure TFCobolIDE.FormResize(Sender: TObject);
 var
   SplitRatio: Double;
   LogHeight: Integer;
