@@ -64,8 +64,15 @@ object FCobolIDE: TFCobolIDE
       end
     end
     object btCompileClick: TMenuItem
-      Caption = #1047#1072#1087#1091#1089#1082
-      OnClick = btCompileClickClick
+      Caption = #1047#1072#1087#1091#1089#1082'|'#1044#1077#1073#1072#1075
+      object btRun: TMenuItem
+        Caption = #1047#1072#1087#1091#1089#1082' '
+        OnClick = btRunClick
+      end
+      object btDebug: TMenuItem
+        Caption = #1044#1077#1073#1072#1075
+        OnClick = btDebugClick
+      end
     end
   end
 end

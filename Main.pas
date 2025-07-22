@@ -6,7 +6,7 @@ uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
   System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ComCtrls, Vcl.Menus,
-  CobolHighlighter, Clipbrd, Vcl.ExtCtrls, System.IOUtils, SearchForm;
+  CobolHighlighter, Clipbrd, Vcl.ExtCtrls, System.IOUtils, SearchForm, ShellAPI;
 
 type
   TFCobolIDE = class(TForm)
@@ -18,6 +18,8 @@ type
     btSave: TMenuItem;
     btCompileClick: TMenuItem;
     CompileLog: TMemo;
+    btRun: TMenuItem;
+    btDebug: TMenuItem;
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormResize(Sender: TObject);
@@ -26,7 +28,8 @@ type
       Shift: TShiftState);
     procedure btOpenClick(Sender: TObject);
     procedure btSaveClick(Sender: TObject);
-    procedure btCompileClickClick(Sender: TObject);
+    procedure btRunClick(Sender: TObject);
+    procedure btDebugClick(Sender: TObject);
   private
     { Private declarations }
     procedure Run;
@@ -66,7 +69,7 @@ begin
   WinExec(PAnsiChar(AnsiString(CmdLine)), SW_SHOW);
 end;
 
-procedure TFCobolIDE.btCompileClickClick(Sender: TObject);
+procedure TFCobolIDE.btRunClick(Sender: TObject);
 var
   WorkDir, SourceFile, ExeFile, CmdLine: string;
   StartupInfo: TStartupInfo;
@@ -126,6 +129,69 @@ begin
   else
     CompileLog.Lines.Text :=
       'Не удалось запустить компиляцию. Проверьте доступность cobc.';
+end;
+
+procedure TFCobolIDE.btDebugClick(Sender: TObject);
+var
+  WorkDir, SourceFile, ExeFile, CompileCmd, DebugCmd: string;
+  StartupInfo: TStartupInfo;
+  ProcessInfo: TProcessInformation;
+  ExitCode: DWORD;
+begin
+  CompileLog.Clear;
+
+  // Подготовка директорий и путей
+  WorkDir := IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) + 'tmp';
+  if not DirectoryExists(WorkDir) then
+    ForceDirectories(WorkDir);
+
+  SourceFile := WorkDir + PathDelim + 'temp_compile.cbl';
+  ExeFile := WorkDir + PathDelim + 'temp_compile.exe';
+
+  // Сохраняем исходник из редактора
+  CodeEditor.PlainText := True;
+  CodeEditor.Lines.SaveToFile(SourceFile);
+
+  // Команда компиляции с отладочной информацией
+  CompileCmd := Format('cmd.exe /C cobc -g -x "%s"',
+    [ExtractFileName(SourceFile)]);
+
+  ZeroMemory(@StartupInfo, SizeOf(StartupInfo));
+  ZeroMemory(@ProcessInfo, SizeOf(ProcessInfo));
+  StartupInfo.cb := SizeOf(StartupInfo);
+  StartupInfo.dwFlags := STARTF_USESHOWWINDOW;
+  StartupInfo.wShowWindow := SW_HIDE;
+
+  if CreateProcess(nil, PChar(CompileCmd), nil, nil, False, CREATE_NO_WINDOW,
+    nil, PChar(WorkDir), StartupInfo, ProcessInfo) then
+  begin
+    WaitForSingleObject(ProcessInfo.hProcess, INFINITE);
+    GetExitCodeProcess(ProcessInfo.hProcess, ExitCode);
+    CloseHandle(ProcessInfo.hProcess);
+    CloseHandle(ProcessInfo.hThread);
+
+    if ExitCode = 0 then
+    begin
+      CompileLog.Lines.Add('Компиляция с отладочной информацией успешна.');
+
+      if FileExists(ExeFile) then
+      begin
+        // Запускаем GDB с поддержкой текстового интерфейса TUI
+        DebugCmd := Format('gdb -tui "%s"', [ExeFile]);
+
+        // Лучше использовать ShellExecute, чтобы запустить в отдельном окне консоли
+        ShellExecute(0, 'open', 'cmd.exe', PChar('/K ' + DebugCmd),
+          PChar(WorkDir), SW_SHOW);
+      end
+      else
+        CompileLog.Lines.Add('Исполняемый файл не найден после компиляции.');
+    end
+    else
+      CompileLog.Lines.Add('Компиляция завершилась с ошибками.');
+  end
+  else
+    CompileLog.Lines.Add
+      ('Не удалось запустить компиляцию. Проверьте доступность cobc и права доступа.');
 end;
 
 procedure TFCobolIDE.btOpenClick(Sender: TObject);

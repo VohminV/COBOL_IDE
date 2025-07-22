@@ -1,12 +1,12 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <BorlandProject>
 	<Transactions>
-    <Transaction>1899.12.30 00:00:00.000.038,C:\Users\Viktor\Documents\Embarcadero\Studio\Projects\Unit4.dfm=E:\Source\COBOL_IDE\Main.dfm</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.229,E:\Source\COBOL_IDE\CobolIDE.dproj=C:\Users\Viktor\Documents\Embarcadero\Studio\Projects\Project3.dproj</Transaction>
     <Transaction>1899.12.30 00:00:00.000.926,=E:\Source\COBOL_IDE\Unit1.pas</Transaction>
-    <Transaction>1899.12.30 00:00:00.000.209,E:\Source\COBOL_IDE\Unit1.pas=E:\Source\COBOL_IDE\CobolHighlighter.pas</Transaction>
-    <Transaction>1899.12.30 00:00:00.000.038,C:\Users\Viktor\Documents\Embarcadero\Studio\Projects\Unit4.pas=E:\Source\COBOL_IDE\Main.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.038,E:\Source\COBOL_IDE\Main.pas=C:\Users\Viktor\Documents\Embarcadero\Studio\Projects\Unit4.pas</Transaction>
     <Transaction>1899.12.30 00:00:00.000.222,=C:\Users\Viktor\Documents\Embarcadero\Studio\Projects\Unit4.pas</Transaction>
-    <Transaction>1899.12.30 00:00:00.000.229,C:\Users\Viktor\Documents\Embarcadero\Studio\Projects\Project3.dproj=E:\Source\COBOL_IDE\CobolIDE.dproj</Transaction>
-    <Transaction>2025.07.22 11:06:47.742,=E:\Source\COBOL_IDE\SearchForm.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.209,E:\Source\COBOL_IDE\CobolHighlighter.pas=E:\Source\COBOL_IDE\Unit1.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.742,=E:\Source\COBOL_IDE\SearchForm.pas</Transaction>
+    <Transaction>1899.12.30 00:00:00.000.038,E:\Source\COBOL_IDE\Main.dfm=C:\Users\Viktor\Documents\Embarcadero\Studio\Projects\Unit4.dfm</Transaction>
   </Transactions>
 </BorlandProject>
