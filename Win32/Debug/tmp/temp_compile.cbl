@@ -1,56 +1,76 @@
-IDENTIFICATION DIVISION.
-PROGRAM-ID. PAYROLL-CALCULATOR.
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. TransactionSummary.
 
-DATA DIVISION.
-WORKING-STORAGE SECTION.
+       ENVIRONMENT DIVISION.
 
-01 EMPLOYEE-NAME       PIC A(20).
-01 HOURS-WORKED        PIC 999.
-01 HOURLY-RATE         PIC 9(3)V99.
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
 
-01 GROSS-PAY           PIC 9(5)V99.
-01 BONUS               PIC 9(5)V99 VALUE 0.
-01 TOTAL-BEFORE-TAX    PIC 9(6)V99.
-01 TAX-AMOUNT          PIC 9(6)V99.
-01 FINAL-PAY           PIC 9(6)V99.
+       77  I                     PIC 9(3).
+       77  NumTransactions      PIC 9(3) VALUE 0.
+       77  TypeInput            PIC X.
+       77  AmountInput          PIC 9(5)V99.
+       77  PromptLine           PIC X(60).
+       77  FinalBalance         PIC S9(7)V99 VALUE 0.
 
-01 F-GROSS             PIC $ZZ,ZZ9.99.
-01 F-BONUS             PIC $ZZ,ZZ9.99.
-01 F-TOTAL-BEFORE-TAX  PIC $ZZ,ZZ9.99.
-01 F-TAX               PIC $ZZ,ZZ9.99.
-01 F-FINAL             PIC $ZZ,ZZ9.99.
+       01  Transactions.
+           05  TransType       OCCURS 100 TIMES PIC X.
+           05  TransAmount     OCCURS 100 TIMES PIC 9(5)V99.
 
-PROCEDURE DIVISION.
-    DISPLAY "Enter employee name:".
-    ACCEPT EMPLOYEE-NAME.
+       PROCEDURE DIVISION.
+       Main-Logic.
 
-    DISPLAY "Enter number of hours worked:".
-    ACCEPT HOURS-WORKED.
+           DISPLAY "How many transactions (max 100)? " WITH NO ADVANCING
+           ACCEPT NumTransactions
 
-    DISPLAY "Enter hourly rate (e.g., 15.75):".
-    ACCEPT HOURLY-RATE.
+           IF NumTransactions < 1 OR NumTransactions > 100
+               DISPLAY "Invalid number of transactions. Must be 1-100."
+               STOP RUN
+           END-IF
 
-    COMPUTE GROSS-PAY = HOURS-WORKED * HOURLY-RATE.
+           PERFORM VARYING I FROM 1 BY 1 UNTIL I > NumTransactions
 
-    IF HOURS-WORKED > 160
-        COMPUTE BONUS = GROSS-PAY * 0.10
-    END-IF.
+               MOVE SPACES TO PromptLine
+               STRING "Enter type (D/C) for transaction "
+                      I DELIMITED BY SIZE
+                      ": " DELIMITED BY SIZE
+                   INTO PromptLine
+               DISPLAY PromptLine WITH NO ADVANCING
+               ACCEPT TypeInput
 
-    COMPUTE TOTAL-BEFORE-TAX = GROSS-PAY + BONUS.
-    COMPUTE TAX-AMOUNT = TOTAL-BEFORE-TAX * 0.13.
-    COMPUTE FINAL-PAY = TOTAL-BEFORE-TAX - TAX-AMOUNT.
+               *> Преобразуем к верхнему регистру, если введена строчная буква
+               IF TypeInput >= "a" AND TypeInput <= "z"
+                   MOVE FUNCTION UPPER-CASE(TypeInput) TO TypeInput
+               END-IF
 
-    MOVE GROSS-PAY          TO F-GROSS.
-    MOVE BONUS              TO F-BONUS.
-    MOVE TOTAL-BEFORE-TAX   TO F-TOTAL-BEFORE-TAX.
-    MOVE TAX-AMOUNT         TO F-TAX.
-    MOVE FINAL-PAY          TO F-FINAL.
+               IF NOT (TypeInput = "D" OR TypeInput = "C")
+                   DISPLAY "Invalid type, skipping..."
+                   CONTINUE
+               END-IF
 
-    DISPLAY "Employee:          " EMPLOYEE-NAME.
-    DISPLAY "Gross Pay:         " F-GROSS.
-    DISPLAY "Bonus (if any):    " F-BONUS.
-    DISPLAY "Total before tax:  " F-TOTAL-BEFORE-TAX.
-    DISPLAY "Tax (13%):         " F-TAX.
-    DISPLAY "Final Pay:         " F-FINAL.
+               DISPLAY "Enter amount: " WITH NO ADVANCING
+               ACCEPT AmountInput
 
-    STOP RUN.
+               *> Простейшая проверка — нулевая сумма игнорируется
+               IF AmountInput = 0
+                   DISPLAY "Zero amount, skipping..."
+                   CONTINUE
+               END-IF
+
+               MOVE TypeInput TO TransType(I)
+               MOVE AmountInput TO TransAmount(I)
+
+               *> Обновляем итоговый баланс
+               IF TypeInput = "D"
+                   ADD AmountInput TO FinalBalance
+               ELSE
+                   SUBTRACT AmountInput FROM FinalBalance
+               END-IF
+
+           END-PERFORM
+
+           DISPLAY "-------------------------------"
+           DISPLAY "Final Balance: " FinalBalance
+           DISPLAY "-------------------------------"
+
+           STOP RUN.

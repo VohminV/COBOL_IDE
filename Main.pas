@@ -4,7 +4,8 @@ interface
 
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
-  System.Classes, Vcl.Graphics,
+  System.UITypes,
+  System.Classes, Vcl.Graphics, System.StrUtils,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ComCtrls, Vcl.Menus,
   CobolHighlighter, Clipbrd, Vcl.ExtCtrls, System.IOUtils, SearchForm, ShellAPI;
 
@@ -20,6 +21,7 @@ type
     CompileLog: TMemo;
     btRun: TMenuItem;
     btDebug: TMenuItem;
+    procedure SuggestionsListBoxDblClick(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormResize(Sender: TObject);
@@ -36,6 +38,12 @@ type
   private
     { Private declarations }
     FChangingText: Boolean;
+    FInstructions: TStringList;
+    SuggestionsPopup: TPopupMenu;
+    SuggestionsListBox: TListBox;
+    function GetLineHeight: Integer;
+    procedure ShowSuggestions(const Prefix: string);
+    procedure InsertSuggestion(const Suggestion: string);
     procedure Run;
   public
     { Public declarations }
@@ -95,7 +103,9 @@ begin
   CodeEditor.Lines.SaveToFile(SourceFile);
 
   // Команда компиляции без перенаправления вывода в файл
-  CmdLine := Format('cmd.exe /C cobc -x "temp_compile.cbl" -IC:/msys64/mingw64/include -LC:/msys64/mingw64/lib -lgmp', []);
+  CmdLine :=
+    Format('cmd.exe /C cobc -x "temp_compile.cbl" -IC:/msys64/mingw64/include -LC:/msys64/mingw64/lib -lgmp',
+    []);
 
   ZeroMemory(@StartupInfo, SizeOf(StartupInfo));
   ZeroMemory(@ProcessInfo, SizeOf(ProcessInfo));
@@ -254,19 +264,84 @@ procedure TFCobolIDE.CodeEditorKeyDown(Sender: TObject; var Key: Word;
   Shift: TShiftState);
 var
   ClipboardText: string;
+  TextBeforeCursor: string;
+  WordStart: Integer;
+  CurrentPrefix: string;
+  SelStart: Integer;
+  i: Integer;
 begin
   if (Key = Ord('V')) and (ssCtrl in Shift) then
   begin
+    // вставка из буфера
     if Clipboard.HasFormat(CF_TEXT) then
     begin
-      ClipboardText := Clipboard.AsText;
-      // Заменяем весь текст редактора на содержимое буфера
-      CodeEditor.Lines.Text := ClipboardText;
+      CodeEditor.Lines.Text := Clipboard.AsText;
       HL.Highlight;
       Key := 0;
     end;
+    Exit; // Не нужно обрабатывать дальше в этом событии для Ctrl+V
   end;
 
+  // Обработка стрелок и Enter для списка подсказок
+  if SuggestionsListBox.Visible then
+  begin
+    case Key of
+      VK_DOWN:
+        begin
+          if SuggestionsListBox.ItemIndex < SuggestionsListBox.Items.Count - 1
+          then
+            SuggestionsListBox.ItemIndex := SuggestionsListBox.ItemIndex + 1;
+          Key := 0;
+          Exit;
+        end;
+      VK_UP:
+        begin
+          if SuggestionsListBox.ItemIndex > 0 then
+            SuggestionsListBox.ItemIndex := SuggestionsListBox.ItemIndex - 1;
+          Key := 0;
+          Exit;
+        end;
+      VK_RETURN, VK_TAB:
+        begin
+          if SuggestionsListBox.ItemIndex >= 0 then
+          begin
+            InsertSuggestion(SuggestionsListBox.Items
+              [SuggestionsListBox.ItemIndex]);
+            Key := 0;
+            Exit;
+          end;
+        end;
+      VK_ESCAPE:
+        begin
+          SuggestionsListBox.Visible := False;
+          Key := 0;
+          Exit;
+        end;
+    end;
+  end;
+
+  // Для обычных букв — показать подсказки
+  if ((Key >= Ord('A')) and (Key <= Ord('Z'))) or
+    ((Key >= Ord('a')) and (Key <= Ord('z'))) then
+  begin
+    SelStart := CodeEditor.SelStart;
+    TextBeforeCursor := Copy(CodeEditor.Text, 1, SelStart);
+    WordStart := SelStart;
+    for i := SelStart downto 1 do
+      if not(CodeEditor.Text[i] in ['A' .. 'Z', 'a' .. 'z', '-']) then
+      begin
+        WordStart := i + 1;
+        Break;
+      end;
+    CurrentPrefix := Copy(CodeEditor.Text, WordStart, SelStart - WordStart);
+    ShowSuggestions(CurrentPrefix);
+  end
+  else
+  begin
+    SuggestionsListBox.Visible := False;
+  end;
+
+  // Обработка Ctrl+F и F3 — без изменений
   if (Key = Ord('F')) and (ssCtrl in Shift) then
   begin
     SearchText.Show;
@@ -275,6 +350,91 @@ begin
   else if Key = VK_F3 then
   begin
     SearchText.FindNext;
+  end;
+end;
+procedure TFCobolIDE.InsertSuggestion(const Suggestion: string);
+var
+  SelStart, WordStart: Integer;
+  TextBeforeCursor, TextAfterCursor, NewText: string;
+  i: Integer;
+begin
+  SelStart := CodeEditor.SelStart;
+  TextBeforeCursor := Copy(CodeEditor.Text, 1, SelStart);
+
+  // Найти начало текущего слова (по пробелам и знакам)
+  WordStart := SelStart;
+  for i := SelStart downto 1 do
+    if not(CodeEditor.Text[i] in ['A' .. 'Z', 'a' .. 'z', '-']) then
+    begin
+      WordStart := i + 1;
+      Break;
+    end;
+
+  TextAfterCursor := Copy(CodeEditor.Text, SelStart + 1, MaxInt);
+
+  // Формируем новый текст: от начала + подсказка + остальной текст
+  NewText := Copy(CodeEditor.Text, 1, WordStart - 1) + Suggestion +
+    TextAfterCursor;
+  CodeEditor.Text := NewText;
+
+  // Устанавливаем курсор после вставленного слова
+  CodeEditor.SelStart := WordStart - 1 + Length(Suggestion);
+  CodeEditor.SelLength := 0;
+
+  SuggestionsListBox.Visible := False;
+  CodeEditor.SetFocus;
+end;
+
+function TFCobolIDE.GetLineHeight: Integer;
+var
+  DC: HDC;
+  TM: TTextMetric;
+begin
+  DC := GetDC(CodeEditor.Handle);
+  try
+    SelectObject(DC, CodeEditor.Font.Handle);
+    GetTextMetrics(DC, TM);
+    Result := TM.tmHeight + TM.tmExternalLeading;
+  finally
+    ReleaseDC(CodeEditor.Handle, DC);
+  end;
+end;
+
+procedure TFCobolIDE.ShowSuggestions(const Prefix: string);
+var
+  i, X, Y, LineHeight: Integer;
+  Filtered: TStringList;
+  CaretPos: TPoint;
+begin
+  Filtered := TStringList.Create;
+  try
+    for i := 0 to FInstructions.Count - 1 do
+      if StartsText(Prefix, FInstructions[i]) then
+        Filtered.Add(FInstructions[i]);
+
+    if Filtered.Count = 0 then
+    begin
+      SuggestionsListBox.Visible := False;
+      Exit;
+    end;
+
+    SuggestionsListBox.Items.Assign(Filtered);
+    SuggestionsListBox.ItemIndex := 0;
+
+    CaretPos := CodeEditor.ClientToScreen(CodeEditor.CaretPos);
+    X := CaretPos.X;
+
+    LineHeight := GetLineHeight;
+    Y := CaretPos.Y + LineHeight;
+
+    SuggestionsListBox.Left := X - Self.Left;
+    SuggestionsListBox.Top := Y - Self.Top;
+    SuggestionsListBox.Width := 200;
+    SuggestionsListBox.Height := 100;
+    SuggestionsListBox.Visible := True;
+    SuggestionsListBox.BringToFront;
+  finally
+    Filtered.Free;
   end;
 end;
 
@@ -294,12 +454,31 @@ begin
   HL.HighlightLine(CurrentLine);
 end;
 
+procedure TFCobolIDE.SuggestionsListBoxDblClick(Sender: TObject);
+begin
+  if SuggestionsListBox.ItemIndex >= 0 then
+    InsertSuggestion(SuggestionsListBox.Items[SuggestionsListBox.ItemIndex]);
+end;
+
 procedure TFCobolIDE.FormCreate(Sender: TObject);
 begin
   HL := TCobolHighlighter.Create(CodeEditor);
   SearchText := TfSearch.Create(Self);
   SearchText.Init(CodeEditor);
   Self.BorderStyle := bsSizeable;
+
+  // Инициализация словарей
+  FInstructions := TStringList.Create;
+  FInstructions.CommaText :=
+    'OPEN,CLOSE,WRITE,MOVE,PERFORM,STOP,IF,ELSE,END-IF,GO TO,READ,ACCEPT,DISPLAY,COMPUTE,INITIALIZE,RETURN,STOP RUN';
+
+  // Создаём PopupMenu и ListBox для подсказок
+  SuggestionsPopup := TPopupMenu.Create(Self);
+  SuggestionsListBox := TListBox.Create(Self);
+  SuggestionsListBox.Parent := Self;
+  // Изначально не видно, родитель чтобы можно позиционировать
+  SuggestionsListBox.Visible := False;
+  SuggestionsListBox.OnDblClick := SuggestionsListBoxDblClick;
 end;
 
 procedure TFCobolIDE.FormDestroy(Sender: TObject);

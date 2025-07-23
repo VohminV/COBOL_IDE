@@ -1,0 +1,509 @@
+unit Main;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.UITypes,
+  System.Classes, Vcl.Graphics, System.StrUtils,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ComCtrls, Vcl.Menus,
+  CobolHighlighter, Clipbrd, Vcl.ExtCtrls, System.IOUtils, SearchForm, ShellAPI;
+
+type
+  TFCobolIDE = class(TForm)
+    MainMenu1: TMainMenu;
+    CodeEditor: TRichEdit;
+    N1: TMenuItem;
+    btClear: TMenuItem;
+    btOpen: TMenuItem;
+    btSave: TMenuItem;
+    btCompileClick: TMenuItem;
+    CompileLog: TMemo;
+    btRun: TMenuItem;
+    btDebug: TMenuItem;
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure FormResize(Sender: TObject);
+    procedure btClearClick(Sender: TObject);
+    procedure CodeEditorKeyDown(Sender: TObject; var Key: Word;
+      Shift: TShiftState);
+    procedure btOpenClick(Sender: TObject);
+    procedure btSaveClick(Sender: TObject);
+    procedure btRunClick(Sender: TObject);
+    procedure btDebugClick(Sender: TObject);
+    procedure CodeEditorKeyPress(Sender: TObject; var Key: Char);
+    procedure CodeEditorKeyUp(Sender: TObject; var Key: Word;
+      Shift: TShiftState);
+  private
+    { Private declarations }
+    FChangingText: Boolean;
+    FInstructions: TStringList;
+    SuggestionsPopup: TPopupMenu;
+    SuggestionsListBox: TListBox;
+    function GetLineHeight: Integer;
+    procedure ShowSuggestions(const Prefix: string);
+    procedure InsertSuggestion(const Suggestion: string);
+    procedure CodeEditorKeyDownForAutocomplete(var Key: Word;
+      Shift: TShiftState);
+    procedure Run;
+  public
+    { Public declarations }
+  end;
+
+var
+  FCobolIDE: TFCobolIDE;
+  HL: TCobolHighlighter;
+  SearchText: TfSearch;
+
+implementation
+
+{$R *.dfm}
+
+procedure TFCobolIDE.btClearClick(Sender: TObject);
+begin
+  CodeEditor.Clear;
+end;
+
+procedure TFCobolIDE.Run;
+var
+  WorkDir, ExeFile, CmdLine: string;
+begin
+  WorkDir := GetEnvironmentVariable('TEMP');
+  ExeFile := IncludeTrailingPathDelimiter(WorkDir) + 'temp_compile.exe';
+
+  if not FileExists(ExeFile) then
+  begin
+    ShowMessage('Исполняемый файл не найден. Сначала скомпилируйте программу.');
+    Exit;
+  end;
+
+  // Запускаем cmd с запуском exe и оставляем окно открытым (pause)
+  CmdLine := Format('cmd.exe /K "%s"', [ExeFile]);
+  WinExec(PAnsiChar(AnsiString(CmdLine)), SW_SHOW);
+end;
+
+procedure TFCobolIDE.btRunClick(Sender: TObject);
+var
+  WorkDir, SourceFile, ExeFile, CmdLine: string;
+  StartupInfo: TStartupInfo;
+  ProcessInfo: TProcessInformation;
+  SL: TStringList;
+  ExitCode: DWORD;
+begin
+  CompileLog.Clear;
+
+  // Папка tmp рядом с exe
+  WorkDir := ExtractFilePath(ParamStr(0)) + 'tmp\';
+  if not DirectoryExists(WorkDir) then
+    ForceDirectories(WorkDir);
+
+  SourceFile := WorkDir + 'temp_compile.cbl';
+  ExeFile := WorkDir + 'temp_compile.exe';
+
+  CodeEditor.PlainText := True;
+  CodeEditor.Lines.SaveToFile(SourceFile);
+
+  // Команда компиляции без перенаправления вывода в файл
+  CmdLine :=
+    Format('cmd.exe /C cobc -x "temp_compile.cbl" -IC:/msys64/mingw64/include -LC:/msys64/mingw64/lib -lgmp',
+    []);
+
+  ZeroMemory(@StartupInfo, SizeOf(StartupInfo));
+  ZeroMemory(@ProcessInfo, SizeOf(ProcessInfo));
+  StartupInfo.cb := SizeOf(StartupInfo);
+  StartupInfo.dwFlags := STARTF_USESHOWWINDOW;
+  StartupInfo.wShowWindow := SW_HIDE;
+
+  if CreateProcess(nil, PChar(CmdLine), nil, nil, False, CREATE_NO_WINDOW, nil,
+    PChar(WorkDir), StartupInfo, ProcessInfo) then
+  begin
+    // Ждём завершения компиляции
+    WaitForSingleObject(ProcessInfo.hProcess, INFINITE);
+    GetExitCodeProcess(ProcessInfo.hProcess, ExitCode);
+    CloseHandle(ProcessInfo.hProcess);
+    CloseHandle(ProcessInfo.hThread);
+
+    if ExitCode = 0 then
+    begin
+      CompileLog.Lines.Add('Компиляция успешна.');
+      if FileExists(ExeFile) then
+      begin
+        // Запуск exe в консоли с открытым окном (cmd /K чтобы окно не закрывалось)
+        CmdLine := Format('cmd.exe /K "%s"', [ExeFile]);
+        WinExec(PAnsiChar(AnsiString(CmdLine)), SW_SHOW);
+      end
+      else
+        CompileLog.Lines.Add('Исполняемый файл не найден после компиляции.');
+    end
+    else
+    begin
+      CompileLog.Lines.Add
+        ('Компиляция завершилась с ошибками. Посмотрите сообщения выше.');
+    end;
+  end
+  else
+    CompileLog.Lines.Text :=
+      'Не удалось запустить компиляцию. Проверьте доступность cobc.';
+end;
+
+procedure TFCobolIDE.btDebugClick(Sender: TObject);
+var
+  WorkDir, SourceFile, ExeFile, CompileCmd, DebugCmd: string;
+  StartupInfo: TStartupInfo;
+  ProcessInfo: TProcessInformation;
+  ExitCode: DWORD;
+begin
+  CompileLog.Clear;
+
+  // Подготовка директорий и путей
+  WorkDir := IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) + 'tmp';
+  if not DirectoryExists(WorkDir) then
+    ForceDirectories(WorkDir);
+
+  SourceFile := WorkDir + PathDelim + 'temp_compile.cbl';
+  ExeFile := WorkDir + PathDelim + 'temp_compile.exe';
+
+  // Сохраняем исходник из редактора
+  CodeEditor.PlainText := True;
+  CodeEditor.Lines.SaveToFile(SourceFile);
+
+  // Команда компиляции с отладочной информацией
+  CompileCmd := Format('cmd.exe /C cobc -g -x "%s"',
+    [ExtractFileName(SourceFile)]);
+
+  ZeroMemory(@StartupInfo, SizeOf(StartupInfo));
+  ZeroMemory(@ProcessInfo, SizeOf(ProcessInfo));
+  StartupInfo.cb := SizeOf(StartupInfo);
+  StartupInfo.dwFlags := STARTF_USESHOWWINDOW;
+  StartupInfo.wShowWindow := SW_HIDE;
+
+  if CreateProcess(nil, PChar(CompileCmd), nil, nil, False, CREATE_NO_WINDOW,
+    nil, PChar(WorkDir), StartupInfo, ProcessInfo) then
+  begin
+    WaitForSingleObject(ProcessInfo.hProcess, INFINITE);
+    GetExitCodeProcess(ProcessInfo.hProcess, ExitCode);
+    CloseHandle(ProcessInfo.hProcess);
+    CloseHandle(ProcessInfo.hThread);
+
+    if ExitCode = 0 then
+    begin
+      CompileLog.Lines.Add('Компиляция с отладочной информацией успешна.');
+
+      if FileExists(ExeFile) then
+      begin
+        // Запускаем GDB с поддержкой текстового интерфейса TUI
+        DebugCmd := Format('gdb -tui "%s"', [ExeFile]);
+
+        // Лучше использовать ShellExecute, чтобы запустить в отдельном окне консоли
+        ShellExecute(0, 'open', 'cmd.exe', PChar('/K ' + DebugCmd),
+          PChar(WorkDir), SW_SHOW);
+      end
+      else
+        CompileLog.Lines.Add('Исполняемый файл не найден после компиляции.');
+    end
+    else
+      CompileLog.Lines.Add('Компиляция завершилась с ошибками.');
+  end
+  else
+    CompileLog.Lines.Add
+      ('Не удалось запустить компиляцию. Проверьте доступность cobc и права доступа.');
+end;
+
+procedure TFCobolIDE.btOpenClick(Sender: TObject);
+var
+  OpenDialog: TOpenDialog;
+begin
+  OpenDialog := TOpenDialog.Create(Self);
+  try
+    OpenDialog.Filter := 'COBOL файлы|*.cbl;*.cob|Все файлы|*.*';
+    if OpenDialog.Execute then
+    begin
+      if CodeEditor.Lines.Count > 0 then
+      begin
+        if MessageDlg('Очистить текущий текст перед загрузкой нового?',
+          mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
+          Exit;
+        CodeEditor.Clear;
+      end;
+
+      CodeEditor.Lines.LoadFromFile(OpenDialog.FileName);
+      HL.Highlight;
+    end;
+  finally
+    OpenDialog.Free;
+  end;
+end;
+
+procedure TFCobolIDE.btSaveClick(Sender: TObject);
+var
+  SaveDialog: TSaveDialog;
+  FileName: string;
+begin
+  SaveDialog := TSaveDialog.Create(Self);
+  try
+    SaveDialog.Filter := 'COBOL файлы|*.cbl;*.cob|Все файлы|*.*';
+    SaveDialog.DefaultExt := 'cbl';
+    SaveDialog.FilterIndex := 1;
+    // Устанавливаем выбор по умолчанию — COBOL файлы
+
+    if SaveDialog.Execute then
+    begin
+      FileName := SaveDialog.FileName;
+
+      // Если пользователь не указал расширение — добавим .cbl
+      if ExtractFileExt(FileName) = '' then
+        FileName := FileName + '.cbl';
+      CodeEditor.PlainText := True;
+      CodeEditor.Lines.SaveToFile(FileName);
+    end;
+  finally
+    SaveDialog.Free;
+  end;
+end;
+
+procedure TFCobolIDE.CodeEditorKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+var
+  ClipboardText: string;
+  TextBeforeCursor: string;
+  WordStart: Integer;
+  CurrentPrefix: string;
+  i: Integer;
+begin
+  if (Key = Ord('V')) and (ssCtrl in Shift) then
+  begin
+    if Clipboard.HasFormat(CF_TEXT) then
+    begin
+      ClipboardText := Clipboard.AsText;
+      // Заменяем весь текст редактора на содержимое буфера
+      CodeEditor.Lines.Text := ClipboardText;
+      HL.Highlight;
+      Key := 0;
+    end;
+
+    // Добавляем обработку стрелок и Enter для списка подсказок
+    if SuggestionsListBox.Visible then
+    begin
+      case Key of
+        VK_DOWN:
+          begin
+            if SuggestionsListBox.ItemIndex < SuggestionsListBox.Items.Count - 1 then
+              SuggestionsListBox.ItemIndex := SuggestionsListBox.ItemIndex + 1;
+            Key := 0;
+            Exit;
+          end;
+        VK_UP:
+          begin
+            if SuggestionsListBox.ItemIndex > 0 then
+              SuggestionsListBox.ItemIndex := SuggestionsListBox.ItemIndex - 1;
+            Key := 0;
+            Exit;
+          end;
+        VK_RETURN, VK_TAB:
+          begin
+            if SuggestionsListBox.ItemIndex >= 0 then
+            begin
+              InsertSuggestion(SuggestionsListBox.Items[SuggestionsListBox.ItemIndex]);
+              Key := 0;
+              Exit;
+            end;
+          end;
+        VK_ESCAPE:
+          begin
+            SuggestionsListBox.Visible := False;
+            Key := 0;
+            Exit;
+          end;
+      end;
+    end;
+
+    // Для остальных клавиш вызываем автодополнение
+    if ((Key >= Ord('A')) and (Key <= Ord('Z'))) or ((Key >= Ord('a')) and (Key <= Ord('z'))) then
+    begin
+      // Получить текущее слово и показать подсказки
+      var SelStart := CodeEditor.SelStart;
+      TextBeforeCursor := Copy(CodeEditor.Text, 1, SelStart);
+      WordStart := SelStart;
+      for i := SelStart downto 1 do
+        if not (CodeEditor.Text[i] in ['A' .. 'Z', 'a' .. 'z', '-']) then
+        begin
+          WordStart := i + 1;
+          Break;
+        end;
+      CurrentPrefix := Copy(CodeEditor.Text, WordStart, SelStart - WordStart);
+      ShowSuggestions(CurrentPrefix);
+    end
+    else
+      SuggestionsListBox.Visible := False;
+  end;
+
+  if (Key = Ord('F')) and (ssCtrl in Shift) then
+  begin
+    SearchText.Show;
+    SearchText.EditSearch.SetFocus;
+  end
+  else if Key = VK_F3 then
+  begin
+    SearchText.FindNext;
+  end;
+end;
+
+
+procedure TFCobolIDE.InsertSuggestion(const Suggestion: string);
+var
+  SelStart, WordStart: Integer;
+  TextBeforeCursor, TextAfterCursor, NewText: string;
+  i: Integer;
+begin
+  SelStart := CodeEditor.SelStart;
+  TextBeforeCursor := Copy(CodeEditor.Text, 1, SelStart);
+
+  // Найти начало текущего слова (по пробелам и знакам)
+  WordStart := SelStart;
+  for i := SelStart downto 1 do
+    if not(CodeEditor.Text[i] in ['A' .. 'Z', 'a' .. 'z', '-']) then
+    begin
+      WordStart := i + 1;
+      Break;
+    end;
+
+  TextAfterCursor := Copy(CodeEditor.Text, SelStart + 1, MaxInt);
+
+  // Формируем новый текст: от начала + подсказка + остальной текст
+  NewText := Copy(CodeEditor.Text, 1, WordStart - 1) + Suggestion +
+    TextAfterCursor;
+  CodeEditor.Text := NewText;
+
+  // Устанавливаем курсор после вставленного слова
+  CodeEditor.SelStart := WordStart - 1 + Length(Suggestion);
+  CodeEditor.SelLength := 0;
+
+  SuggestionsListBox.Visible := False;
+  CodeEditor.SetFocus;
+end;
+
+function TFCobolIDE.GetLineHeight: Integer;
+var
+  DC: HDC;
+  TM: TTextMetric;
+begin
+  DC := GetDC(CodeEditor.Handle);
+  try
+    SelectObject(DC, CodeEditor.Font.Handle);
+    GetTextMetrics(DC, TM);
+    Result := TM.tmHeight + TM.tmExternalLeading;
+  finally
+    ReleaseDC(CodeEditor.Handle, DC);
+  end;
+end;
+
+procedure TFCobolIDE.ShowSuggestions(const Prefix: string);
+var
+  i, X, Y, LineHeight: Integer;
+  Filtered: TStringList;
+  CaretPos: TPoint;
+begin
+  Filtered := TStringList.Create;
+  try
+    for i := 0 to FInstructions.Count - 1 do
+      if StartsText(Prefix, FInstructions[i]) then
+        Filtered.Add(FInstructions[i]);
+
+    if Filtered.Count = 0 then
+    begin
+      SuggestionsListBox.Visible := False;
+      Exit;
+    end;
+
+    SuggestionsListBox.Items.Assign(Filtered);
+    SuggestionsListBox.ItemIndex := 0;
+
+    CaretPos := CodeEditor.ClientToScreen(CodeEditor.CaretPos);
+    X := CaretPos.X;
+
+    LineHeight := GetLineHeight;
+    Y := CaretPos.Y + LineHeight;
+
+    SuggestionsListBox.Left := X - Self.Left;
+    SuggestionsListBox.Top := Y - Self.Top;
+    SuggestionsListBox.Width := 200;
+    SuggestionsListBox.Height := 100;
+    SuggestionsListBox.Visible := True;
+    SuggestionsListBox.BringToFront;
+  finally
+    Filtered.Free;
+  end;
+end;
+
+procedure TFCobolIDE.CodeEditorKeyPress(Sender: TObject; var Key: Char);
+begin
+  // Отмена ввода русских букв (кириллицы)
+  if (Key in ['А' .. 'я', 'Ё', 'ё']) then
+    Key := #0; // блокируем ввод
+end;
+
+procedure TFCobolIDE.CodeEditorKeyUp(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+var
+  CurrentLine: Integer;
+begin
+  CurrentLine := CodeEditor.Perform(EM_LINEFROMCHAR, CodeEditor.SelStart, 0);
+  HL.HighlightLine(CurrentLine);
+end;
+
+procedure TFCobolIDE.SuggestionsListBoxDblClick(Sender: TObject);
+begin
+  if SuggestionsListBox.ItemIndex >= 0 then
+    InsertSuggestion(SuggestionsListBox.Items[SuggestionsListBox.ItemIndex]);
+end;
+
+procedure TFCobolIDE.FormCreate(Sender: TObject);
+begin
+  HL := TCobolHighlighter.Create(CodeEditor);
+  SearchText := TfSearch.Create(Self);
+  SearchText.Init(CodeEditor);
+  Self.BorderStyle := bsSizeable;
+
+  // Инициализация словарей
+  FInstructions := TStringList.Create;
+  FInstructions.CommaText :=
+    'OPEN,CLOSE,WRITE,MOVE,PERFORM,STOP,IF,ELSE,END-IF,GO TO,READ,ACCEPT,DISPLAY,COMPUTE,INITIALIZE,RETURN,STOP RUN';
+
+  // Создаём PopupMenu и ListBox для подсказок
+  SuggestionsPopup := TPopupMenu.Create(Self);
+  SuggestionsListBox := TListBox.Create(Self);
+  SuggestionsListBox.Parent := Self;
+  // Изначально не видно, родитель чтобы можно позиционировать
+  SuggestionsListBox.Visible := False;
+  SuggestionsListBox.OnDblClick := procedure(Sender: TObject)
+    begin
+      if SuggestionsListBox.ItemIndex >= 0 then
+        InsertSuggestion(SuggestionsListBox.Items
+          [SuggestionsListBox.ItemIndex]);
+    end;
+end;
+
+procedure TFCobolIDE.FormDestroy(Sender: TObject);
+begin
+  HL.Free;
+end;
+
+procedure TFCobolIDE.FormResize(Sender: TObject);
+var
+  SplitRatio: Double;
+  LogHeight: Integer;
+begin
+  SplitRatio := 0.20; // Лог будет занимать 30% высоты формы
+  LogHeight := Round(ClientHeight * SplitRatio);
+
+  CompileLog.Top := ClientHeight - LogHeight;
+  CompileLog.Left := 0;
+  CompileLog.Width := ClientWidth;
+  CompileLog.Height := LogHeight;
+
+  CodeEditor.Top := 0;
+  CodeEditor.Left := 0;
+  CodeEditor.Width := ClientWidth;
+  CodeEditor.Height := ClientHeight - LogHeight;
+end;
+
+end.
