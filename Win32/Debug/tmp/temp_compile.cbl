@@ -1,5 +1,56 @@
-       IDENTIFICATION DIVISION.
-       PROGRAM-ID. HelloWorld.
-       PROCEDURE DIVISION.
-           DISPLAY "Hello, world!".
-           STOP RUN.
+IDENTIFICATION DIVISION.
+PROGRAM-ID. PAYROLL-CALCULATOR.
+
+DATA DIVISION.
+WORKING-STORAGE SECTION.
+
+01 EMPLOYEE-NAME       PIC A(20).
+01 HOURS-WORKED        PIC 999.
+01 HOURLY-RATE         PIC 9(3)V99.
+
+01 GROSS-PAY           PIC 9(5)V99.
+01 BONUS               PIC 9(5)V99 VALUE 0.
+01 TOTAL-BEFORE-TAX    PIC 9(6)V99.
+01 TAX-AMOUNT          PIC 9(6)V99.
+01 FINAL-PAY           PIC 9(6)V99.
+
+01 F-GROSS             PIC $ZZ,ZZ9.99.
+01 F-BONUS             PIC $ZZ,ZZ9.99.
+01 F-TOTAL-BEFORE-TAX  PIC $ZZ,ZZ9.99.
+01 F-TAX               PIC $ZZ,ZZ9.99.
+01 F-FINAL             PIC $ZZ,ZZ9.99.
+
+PROCEDURE DIVISION.
+    DISPLAY "Enter employee name:".
+    ACCEPT EMPLOYEE-NAME.
+
+    DISPLAY "Enter number of hours worked:".
+    ACCEPT HOURS-WORKED.
+
+    DISPLAY "Enter hourly rate (e.g., 15.75):".
+    ACCEPT HOURLY-RATE.
+
+    COMPUTE GROSS-PAY = HOURS-WORKED * HOURLY-RATE.
+
+    IF HOURS-WORKED > 160
+        COMPUTE BONUS = GROSS-PAY * 0.10
+    END-IF.
+
+    COMPUTE TOTAL-BEFORE-TAX = GROSS-PAY + BONUS.
+    COMPUTE TAX-AMOUNT = TOTAL-BEFORE-TAX * 0.13.
+    COMPUTE FINAL-PAY = TOTAL-BEFORE-TAX - TAX-AMOUNT.
+
+    MOVE GROSS-PAY          TO F-GROSS.
+    MOVE BONUS              TO F-BONUS.
+    MOVE TOTAL-BEFORE-TAX   TO F-TOTAL-BEFORE-TAX.
+    MOVE TAX-AMOUNT         TO F-TAX.
+    MOVE FINAL-PAY          TO F-FINAL.
+
+    DISPLAY "Employee:          " EMPLOYEE-NAME.
+    DISPLAY "Gross Pay:         " F-GROSS.
+    DISPLAY "Bonus (if any):    " F-BONUS.
+    DISPLAY "Total before tax:  " F-TOTAL-BEFORE-TAX.
+    DISPLAY "Tax (13%):         " F-TAX.
+    DISPLAY "Final Pay:         " F-FINAL.
+
+    STOP RUN.

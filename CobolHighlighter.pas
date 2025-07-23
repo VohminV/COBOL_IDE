@@ -12,13 +12,14 @@ type
     FRichEdit: TRichEdit;
 
     //  лючевые слова
-    FInstructions, FDeclarations, FIntrinsics, FFigurativeConstants: TStringList;
+    FInstructions, FDeclarations, FIntrinsics, FFigurativeConstants
+      : TStringList;
     FPreprocStart, FPreprocEnd: TStringList;
 
     // ÷вета
     ColorInstruction, ColorDeclaration, ColorIntrinsic, ColorFigConst,
-    ColorNumber, ColorString, ColorChar, ColorOperator, ColorComment,
-    ColorPreprocessor: TColor;
+      ColorNumber, ColorString, ColorChar, ColorOperator, ColorComment,
+      ColorPreprocessor: TColor;
 
     //  омментарии и прочее
     FSingleLineStart: Char;
@@ -30,7 +31,8 @@ type
 
     procedure LoadKeywordsAndColors;
     procedure LoadCommentsAndContinuation;
-    procedure StyleRange(StartPos, Len: Integer; Color: TColor; Bold, Italic: Boolean);
+    procedure StyleRange(StartPos, Len: Integer; Color: TColor;
+      Bold, Italic: Boolean);
     function IsOperatorChar(C: Char): Boolean;
     function CleanTokenStr(const S: string): string;
     procedure ProcessLine(LineIndex: Integer);
@@ -40,7 +42,11 @@ type
     constructor Create(RichEdit: TRichEdit);
     destructor Destroy; override;
 
-    procedure Highlight;
+    procedure Highlight; overload;
+    procedure HighlightLine(LineIndex: Integer); overload;
+
+    property HighlightOnlyChanged: Boolean read FHighlightOnlyChanged
+      write FHighlightOnlyChanged;
   end;
 
 implementation
@@ -83,25 +89,30 @@ end;
 
 procedure TCobolHighlighter.LoadKeywordsAndColors;
 begin
-  FInstructions.CommaText := 'OPEN,CLOSE,WRITE,MOVE,PERFORM,STOP,IF,ELSE,END-IF,GO TO,READ,ACCEPT,DISPLAY,COMPUTE,INITIALIZE,RETURN,STOP RUN';
-  FDeclarations.CommaText := 'PROGRAM-ID,DATA DIVISION,WORKING-STORAGE SECTION,FILE SECTION,ENVIRONMENT DIVISION,PROCEDURE DIVISION,INPUT-OUTPUT SECTION,FILE-CONTROL';
-  FIntrinsics.CommaText := 'DISPLAY,ACCEPT,COMPUTE,MULTIPLY,DIVIDE,ADD,SUBTRACT,INITIALIZE,STOP,EXIT,CONTINUE';
-  FFigurativeConstants.CommaText := 'ZERO,ZEROS,SPACES,HIGH-VALUES,LOW-VALUES,QUOTE,ALL';
+  FInstructions.CommaText :=
+    'OPEN,CLOSE,WRITE,MOVE,PERFORM,STOP,IF,ELSE,END-IF,GO TO,READ,ACCEPT,DISPLAY,COMPUTE,INITIALIZE,RETURN,STOP RUN';
+  FDeclarations.CommaText :=
+    'PROGRAM-ID,DATA DIVISION,WORKING-STORAGE SECTION,FILE SECTION,ENVIRONMENT DIVISION,PROCEDURE DIVISION,INPUT-OUTPUT SECTION,FILE-CONTROL';
+  FIntrinsics.CommaText :=
+    'DISPLAY,ACCEPT,COMPUTE,MULTIPLY,DIVIDE,ADD,SUBTRACT,INITIALIZE,STOP,EXIT,CONTINUE';
+  FFigurativeConstants.CommaText :=
+    'ZERO,ZEROS,SPACES,HIGH-VALUES,LOW-VALUES,QUOTE,ALL';
 
   FPreprocStart.CommaText := 'EXEC,COPY';
   FPreprocEnd.CommaText := 'END-EXEC';
 
-  // ÷вета
-  ColorInstruction := $63C793;       // зелЄный
-  ColorDeclaration := $BD82A0;       // розовый/фиолетовый
-  ColorIntrinsic := $0060EC;         // синий
-  ColorFigConst := $0949FF;          // €рко-синий
-  ColorNumber := $22CDFF;            // бирюзовый
-  ColorString := $0060EC;            // синий
-  ColorChar := $0949FF;              // €рко-синий
-  ColorOperator := $B7E2E8;          // бледно-жЄлтый
-  ColorComment := $7B7466;           // серо-коричневый
-  ColorPreprocessor := $BD82A0;      // тот же, что и декларации
+  // ÷вета (BGR формат)
+  ColorInstruction := $2E7D4F; // тЄмно-зелЄный
+  ColorDeclaration := $8A4678; // насыщенный пурпурный
+  ColorIntrinsic := $0047B3; // глубокий синий
+  ColorFigConst := $002F9C; // €рко-синий, но темнее и насыщеннее
+  ColorNumber := $009FCF; // бирюзовый, чуть темнее, но чистый
+  ColorString := $0047B3; // такой же синий как Intrinsic
+  ColorChar := $002F9C; // €рко-синий, совпадает с FigConst
+  ColorOperator := $507D7F; // приглушЄнный серо-голубой
+  ColorComment := $5A4F3C; // более тЄмный коричневато-серый
+  ColorPreprocessor := $8A4678; // такой же как Declaration
+
 end;
 
 procedure TCobolHighlighter.LoadCommentsAndContinuation;
@@ -113,7 +124,8 @@ begin
   FContinuationColumn := 7;
 end;
 
-procedure TCobolHighlighter.StyleRange(StartPos, Len: Integer; Color: TColor; Bold, Italic: Boolean);
+procedure TCobolHighlighter.StyleRange(StartPos, Len: Integer; Color: TColor;
+  Bold, Italic: Boolean);
 var
   StyleSet: TFontStyles;
 begin
@@ -121,14 +133,17 @@ begin
   FRichEdit.SelLength := Len;
   FRichEdit.SelAttributes.Color := Color;
   StyleSet := [];
-  if Bold then Include(StyleSet, fsBold);
-  if Italic then Include(StyleSet, fsItalic);
+  if Bold then
+    Include(StyleSet, fsBold);
+  if Italic then
+    Include(StyleSet, fsItalic);
   FRichEdit.SelAttributes.Style := StyleSet;
 end;
 
 function TCobolHighlighter.IsOperatorChar(C: Char): Boolean;
 const
-  Ops: TSysCharSet = ['+', '-', '*', '/', '=', '<', '>', '.', ',', '(', ')', '[', ']', ':', ';'];
+  Ops: TSysCharSet = ['+', '-', '*', '/', '=', '<', '>', '.', ',', '(', ')',
+    '[', ']', ':', ';'];
 begin
   Result := CharInSet(C, Ops);
 end;
@@ -139,7 +154,7 @@ var
 begin
   Result := '';
   for k := 1 to Length(S) do
-    if CharInSet(S[k], ['A'..'Z','a'..'z','0'..'9','-']) then
+    if CharInSet(S[k], ['A' .. 'Z', 'a' .. 'z', '0' .. '9', '-']) then
       Result := Result + S[k];
 end;
 
@@ -153,6 +168,12 @@ begin
   LineText := FRichEdit.Lines[LineIndex];
   LineStart := FRichEdit.Perform(EM_LINEINDEX, LineIndex, 0);
 
+  // ќчистить предыдущий стиль строки (чтобы избежать наложени€ цветов)
+  FRichEdit.SelStart := LineStart;
+  FRichEdit.SelLength := Length(LineText);
+  FRichEdit.SelAttributes.Color := clWindowText;
+  FRichEdit.SelAttributes.Style := [];
+
   if (Length(LineText) > 0) and (LineText[1] = FSingleLineStart) then
   begin
     StyleRange(LineStart, Length(LineText), ColorComment, False, False);
@@ -162,7 +183,8 @@ begin
   j := Pos(FInlineComment, LineText);
   if j > 0 then
   begin
-    StyleRange(LineStart + j - 1, Length(LineText) - j + 1, ColorComment, False, False);
+    StyleRange(LineStart + j - 1, Length(LineText) - j + 1, ColorComment,
+      False, False);
     SetLength(LineText, j - 1);
   end;
 
@@ -181,8 +203,10 @@ begin
       j := PosInLine + 1;
       while (j <= Length(LineText)) and (LineText[j] <> LineText[PosInLine]) do
         Inc(j);
-      if j <= Length(LineText) then Inc(j);
-      StyleRange(LineStart + TokenStart - 1, j - TokenStart + 1, ColorString, False, False);
+      if j <= Length(LineText) then
+        Inc(j);
+      StyleRange(LineStart + TokenStart - 1, j - TokenStart + 1, ColorString,
+        False, False);
       PosInLine := j;
       Continue;
     end;
@@ -196,7 +220,8 @@ begin
 
     Token := '';
     j := PosInLine;
-    while (j <= Length(LineText)) and not CharInSet(LineText[j], [' ', #9]) and not IsOperatorChar(LineText[j]) do
+    while (j <= Length(LineText)) and not CharInSet(LineText[j], [' ', #9]) and
+      not IsOperatorChar(LineText[j]) do
     begin
       Token := Token + LineText[j];
       Inc(j);
@@ -206,22 +231,29 @@ begin
     CleanToken := UpperCase(CleanTokenStr(Token));
 
     if TryStrToFloat(Token, DummyFloat) then
-      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorNumber, False, False)
+      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorNumber,
+        False, False)
 
-    else if (FPreprocStart.IndexOf(UpperToken) >= 0) or (FPreprocEnd.IndexOf(UpperToken) >= 0) then
-      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorPreprocessor, True, False)
+    else if (FPreprocStart.IndexOf(UpperToken) >= 0) or
+      (FPreprocEnd.IndexOf(UpperToken) >= 0) then
+      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorPreprocessor,
+        True, False)
 
     else if FInstructions.IndexOf(CleanToken) >= 0 then
-      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorInstruction, True, False)
+      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorInstruction,
+        True, False)
 
     else if FDeclarations.IndexOf(CleanToken) >= 0 then
-      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorDeclaration, True, False)
+      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorDeclaration,
+        True, False)
 
     else if FIntrinsics.IndexOf(CleanToken) >= 0 then
-      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorIntrinsic, True, False)
+      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorIntrinsic,
+        True, False)
 
     else if FFigurativeConstants.IndexOf(CleanToken) >= 0 then
-      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorFigConst, True, False);
+      StyleRange(LineStart + PosInLine - 1, Length(Token), ColorFigConst,
+        True, False);
 
     PosInLine := j;
   end;
@@ -244,11 +276,34 @@ procedure TCobolHighlighter.Highlight;
 begin
   FRichEdit.Lines.BeginUpdate;
   try
-    HighlightAllLines;
+    if FHighlightOnlyChanged then
+      Exit // ≈сли режим только подсветка изменЄнной Ч дл€ Highlight без параметров выходим, чтобы не мешать
+    else
+      HighlightAllLines;
   finally
     FRichEdit.Lines.EndUpdate;
   end;
 end;
 
-end.
+procedure TCobolHighlighter.HighlightLine(LineIndex: Integer);
+var
+  SelStart, SelLength: Integer;
+begin
+  if (LineIndex < 0) or (LineIndex >= FRichEdit.Lines.Count) then
+    Exit;
 
+  SelStart := FRichEdit.SelStart;
+  SelLength := FRichEdit.SelLength;
+
+  FRichEdit.Lines.BeginUpdate;
+  try
+    ProcessLine(LineIndex);
+  finally
+    FRichEdit.Lines.EndUpdate;
+  end;
+
+  FRichEdit.SelStart := SelStart;
+  FRichEdit.SelLength := SelLength;
+end;
+
+end.

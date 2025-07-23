@@ -1,0 +1,349 @@
+unit Main;
+
+interface
+
+uses
+  Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
+  System.Classes, Vcl.Graphics,
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ComCtrls, Vcl.Menus,
+  CobolHighlighter, Clipbrd, Vcl.ExtCtrls, System.IOUtils, SearchForm, ShellAPI;
+
+type
+  TFCobolIDE = class(TForm)
+    MainMenu1: TMainMenu;
+    CodeEditor: TRichEdit;
+    N1: TMenuItem;
+    btClear: TMenuItem;
+    btOpen: TMenuItem;
+    btSave: TMenuItem;
+    btCompileClick: TMenuItem;
+    CompileLog: TMemo;
+    btRun: TMenuItem;
+    btDebug: TMenuItem;
+    procedure FormCreate(Sender: TObject);
+    procedure FormDestroy(Sender: TObject);
+    procedure FormResize(Sender: TObject);
+    procedure btClearClick(Sender: TObject);
+    procedure CodeEditorKeyDown(Sender: TObject; var Key: Word;
+      Shift: TShiftState);
+    procedure btOpenClick(Sender: TObject);
+    procedure btSaveClick(Sender: TObject);
+    procedure btRunClick(Sender: TObject);
+    procedure btDebugClick(Sender: TObject);
+    procedure CodeEditorChange(Sender: TObject);
+    procedure CodeEditorKeyPress(Sender: TObject; var Key: Char);
+  private
+    { Private declarations }
+    FChangingText: Boolean;
+    procedure Run;
+  public
+    { Public declarations }
+  end;
+
+var
+  FCobolIDE: TFCobolIDE;
+  HL: TCobolHighlighter;
+  SearchText: TfSearch;
+
+implementation
+
+{$R *.dfm}
+
+procedure TFCobolIDE.btClearClick(Sender: TObject);
+begin
+  CodeEditor.Clear;
+end;
+
+procedure TFCobolIDE.Run;
+var
+  WorkDir, ExeFile, CmdLine: string;
+begin
+  WorkDir := GetEnvironmentVariable('TEMP');
+  ExeFile := IncludeTrailingPathDelimiter(WorkDir) + 'temp_compile.exe';
+
+  if not FileExists(ExeFile) then
+  begin
+    ShowMessage('Исполняемый файл не найден. Сначала скомпилируйте программу.');
+    Exit;
+  end;
+
+  // Запускаем cmd с запуском exe и оставляем окно открытым (pause)
+  CmdLine := Format('cmd.exe /K "%s"', [ExeFile]);
+  WinExec(PAnsiChar(AnsiString(CmdLine)), SW_SHOW);
+end;
+
+procedure TFCobolIDE.btRunClick(Sender: TObject);
+var
+  WorkDir, SourceFile, ExeFile, CmdLine: string;
+  StartupInfo: TStartupInfo;
+  ProcessInfo: TProcessInformation;
+  SL: TStringList;
+  ExitCode: DWORD;
+begin
+  CompileLog.Clear;
+
+  // Папка tmp рядом с exe
+  WorkDir := ExtractFilePath(ParamStr(0)) + 'tmp\';
+  if not DirectoryExists(WorkDir) then
+    ForceDirectories(WorkDir);
+
+  SourceFile := WorkDir + 'temp_compile.cbl';
+  ExeFile := WorkDir + 'temp_compile.exe';
+
+  CodeEditor.PlainText := True;
+  CodeEditor.Lines.SaveToFile(SourceFile);
+
+  // Команда компиляции без перенаправления вывода в файл
+  CmdLine := Format('cmd.exe /C cobc -x "temp_compile.cbl"', []);
+
+  ZeroMemory(@StartupInfo, SizeOf(StartupInfo));
+  ZeroMemory(@ProcessInfo, SizeOf(ProcessInfo));
+  StartupInfo.cb := SizeOf(StartupInfo);
+  StartupInfo.dwFlags := STARTF_USESHOWWINDOW;
+  StartupInfo.wShowWindow := SW_HIDE;
+
+  if CreateProcess(nil, PChar(CmdLine), nil, nil, False, CREATE_NO_WINDOW, nil,
+    PChar(WorkDir), StartupInfo, ProcessInfo) then
+  begin
+    // Ждём завершения компиляции
+    WaitForSingleObject(ProcessInfo.hProcess, INFINITE);
+    GetExitCodeProcess(ProcessInfo.hProcess, ExitCode);
+    CloseHandle(ProcessInfo.hProcess);
+    CloseHandle(ProcessInfo.hThread);
+
+    if ExitCode = 0 then
+    begin
+      CompileLog.Lines.Add('Компиляция успешна.');
+      if FileExists(ExeFile) then
+      begin
+        // Запуск exe в консоли с открытым окном (cmd /K чтобы окно не закрывалось)
+        CmdLine := Format('cmd.exe /K "%s"', [ExeFile]);
+        WinExec(PAnsiChar(AnsiString(CmdLine)), SW_SHOW);
+      end
+      else
+        CompileLog.Lines.Add('Исполняемый файл не найден после компиляции.');
+    end
+    else
+    begin
+      CompileLog.Lines.Add
+        ('Компиляция завершилась с ошибками. Посмотрите сообщения выше.');
+    end;
+  end
+  else
+    CompileLog.Lines.Text :=
+      'Не удалось запустить компиляцию. Проверьте доступность cobc.';
+end;
+
+procedure TFCobolIDE.btDebugClick(Sender: TObject);
+var
+  WorkDir, SourceFile, ExeFile, CompileCmd, DebugCmd: string;
+  StartupInfo: TStartupInfo;
+  ProcessInfo: TProcessInformation;
+  ExitCode: DWORD;
+begin
+  CompileLog.Clear;
+
+  // Подготовка директорий и путей
+  WorkDir := IncludeTrailingPathDelimiter(ExtractFilePath(ParamStr(0))) + 'tmp';
+  if not DirectoryExists(WorkDir) then
+    ForceDirectories(WorkDir);
+
+  SourceFile := WorkDir + PathDelim + 'temp_compile.cbl';
+  ExeFile := WorkDir + PathDelim + 'temp_compile.exe';
+
+  // Сохраняем исходник из редактора
+  CodeEditor.PlainText := True;
+  CodeEditor.Lines.SaveToFile(SourceFile);
+
+  // Команда компиляции с отладочной информацией
+  CompileCmd := Format('cmd.exe /C cobc -g -x "%s"',
+    [ExtractFileName(SourceFile)]);
+
+  ZeroMemory(@StartupInfo, SizeOf(StartupInfo));
+  ZeroMemory(@ProcessInfo, SizeOf(ProcessInfo));
+  StartupInfo.cb := SizeOf(StartupInfo);
+  StartupInfo.dwFlags := STARTF_USESHOWWINDOW;
+  StartupInfo.wShowWindow := SW_HIDE;
+
+  if CreateProcess(nil, PChar(CompileCmd), nil, nil, False, CREATE_NO_WINDOW,
+    nil, PChar(WorkDir), StartupInfo, ProcessInfo) then
+  begin
+    WaitForSingleObject(ProcessInfo.hProcess, INFINITE);
+    GetExitCodeProcess(ProcessInfo.hProcess, ExitCode);
+    CloseHandle(ProcessInfo.hProcess);
+    CloseHandle(ProcessInfo.hThread);
+
+    if ExitCode = 0 then
+    begin
+      CompileLog.Lines.Add('Компиляция с отладочной информацией успешна.');
+
+      if FileExists(ExeFile) then
+      begin
+        // Запускаем GDB с поддержкой текстового интерфейса TUI
+        DebugCmd := Format('gdb -tui "%s"', [ExeFile]);
+
+        // Лучше использовать ShellExecute, чтобы запустить в отдельном окне консоли
+        ShellExecute(0, 'open', 'cmd.exe', PChar('/K ' + DebugCmd),
+          PChar(WorkDir), SW_SHOW);
+      end
+      else
+        CompileLog.Lines.Add('Исполняемый файл не найден после компиляции.');
+    end
+    else
+      CompileLog.Lines.Add('Компиляция завершилась с ошибками.');
+  end
+  else
+    CompileLog.Lines.Add
+      ('Не удалось запустить компиляцию. Проверьте доступность cobc и права доступа.');
+end;
+
+procedure TFCobolIDE.btOpenClick(Sender: TObject);
+var
+  OpenDialog: TOpenDialog;
+begin
+  OpenDialog := TOpenDialog.Create(Self);
+  try
+    OpenDialog.Filter := 'COBOL файлы|*.cbl;*.cob|Все файлы|*.*';
+    if OpenDialog.Execute then
+    begin
+      if CodeEditor.Lines.Count > 0 then
+      begin
+        if MessageDlg('Очистить текущий текст перед загрузкой нового?',
+          mtConfirmation, [mbYes, mbNo], 0) <> mrYes then
+          Exit;
+        CodeEditor.Clear;
+      end;
+
+      CodeEditor.Lines.LoadFromFile(OpenDialog.FileName);
+      HL.Highlight;
+    end;
+  finally
+    OpenDialog.Free;
+  end;
+end;
+
+procedure TFCobolIDE.btSaveClick(Sender: TObject);
+var
+  SaveDialog: TSaveDialog;
+  FileName: string;
+begin
+  SaveDialog := TSaveDialog.Create(Self);
+  try
+    SaveDialog.Filter := 'COBOL файлы|*.cbl;*.cob|Все файлы|*.*';
+    SaveDialog.DefaultExt := 'cbl';
+    SaveDialog.FilterIndex := 1;
+    // Устанавливаем выбор по умолчанию — COBOL файлы
+
+    if SaveDialog.Execute then
+    begin
+      FileName := SaveDialog.FileName;
+
+      // Если пользователь не указал расширение — добавим .cbl
+      if ExtractFileExt(FileName) = '' then
+        FileName := FileName + '.cbl';
+      CodeEditor.PlainText := True;
+      CodeEditor.Lines.SaveToFile(FileName);
+    end;
+  finally
+    SaveDialog.Free;
+  end;
+end;
+
+procedure TFCobolIDE.CodeEditorChange(Sender: TObject);
+var
+  SelStart, CurrentLine, i: Integer;
+  LineIndex: Integer;
+  S, NewText: string;
+  Changed: Boolean;
+begin
+  SelStart := CodeEditor.SelStart;
+  // Пройдём по всему тексту
+  for LineIndex := 0 to CodeEditor.Lines.Count - 1 do
+  begin
+    S := CodeEditor.Lines[LineIndex];
+    // Удаляем русские буквы из строки S
+    for i := Length(S) downto 1 do
+      if S[i] in ['А' .. 'я', 'Ё', 'ё'] then
+      begin
+        Delete(S, i, 1);
+        if SelStart > i then
+          Dec(SelStart);
+        Changed := True;
+      end;
+    NewText := NewText + S;
+    if LineIndex < CodeEditor.Lines.Count - 1 then
+      NewText := NewText + sLineBreak;
+  end;
+
+  CurrentLine := CodeEditor.Perform(EM_LINEFROMCHAR, SelStart, 0);
+  HL.HighlightLine(CurrentLine);
+end;
+
+procedure TFCobolIDE.CodeEditorKeyDown(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+var
+  ClipboardText: string;
+begin
+  if (Key = Ord('V')) and (ssCtrl in Shift) then
+  begin
+    if Clipboard.HasFormat(CF_TEXT) then
+    begin
+      ClipboardText := Clipboard.AsText;
+      // Заменяем весь текст редактора на содержимое буфера
+      CodeEditor.Lines.Text := ClipboardText;
+      HL.Highlight;
+      Key := 0;
+    end;
+  end;
+
+  if (Key = Ord('F')) and (ssCtrl in Shift) then
+  begin
+    SearchText.Show;
+    SearchText.EditSearch.SetFocus;
+  end
+  else if Key = VK_F3 then
+  begin
+    SearchText.FindNext;
+  end;
+end;
+
+procedure TFCobolIDE.CodeEditorKeyPress(Sender: TObject; var Key: Char);
+begin
+  // Отмена ввода русских букв (кириллицы)
+  if (Key in ['А' .. 'я', 'Ё', 'ё']) then
+    Key := #0; // блокируем ввод
+end;
+
+procedure TFCobolIDE.FormCreate(Sender: TObject);
+begin
+  HL := TCobolHighlighter.Create(CodeEditor);
+  SearchText := TfSearch.Create(Self);
+  SearchText.Init(CodeEditor);
+  Self.BorderStyle := bsSizeable;
+end;
+
+procedure TFCobolIDE.FormDestroy(Sender: TObject);
+begin
+  HL.Free;
+end;
+
+procedure TFCobolIDE.FormResize(Sender: TObject);
+var
+  SplitRatio: Double;
+  LogHeight: Integer;
+begin
+  SplitRatio := 0.20; // Лог будет занимать 30% высоты формы
+  LogHeight := Round(ClientHeight * SplitRatio);
+
+  CompileLog.Top := ClientHeight - LogHeight;
+  CompileLog.Left := 0;
+  CompileLog.Width := ClientWidth;
+  CompileLog.Height := LogHeight;
+
+  CodeEditor.Top := 0;
+  CodeEditor.Left := 0;
+  CodeEditor.Width := ClientWidth;
+  CodeEditor.Height := ClientHeight - LogHeight;
+end;
+
+end.

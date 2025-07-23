@@ -30,8 +30,12 @@ type
     procedure btSaveClick(Sender: TObject);
     procedure btRunClick(Sender: TObject);
     procedure btDebugClick(Sender: TObject);
+    procedure CodeEditorKeyPress(Sender: TObject; var Key: Char);
+    procedure CodeEditorKeyUp(Sender: TObject; var Key: Word;
+      Shift: TShiftState);
   private
     { Private declarations }
+    FChangingText: Boolean;
     procedure Run;
   public
     { Public declarations }
@@ -91,7 +95,7 @@ begin
   CodeEditor.Lines.SaveToFile(SourceFile);
 
   // Команда компиляции без перенаправления вывода в файл
-  CmdLine := Format('cmd.exe /C cobc -x "temp_compile.cbl"', []);
+  CmdLine := Format('cmd.exe /C cobc -x "temp_compile.cbl" -IC:/msys64/mingw64/include -LC:/msys64/mingw64/lib -lgmp', []);
 
   ZeroMemory(@StartupInfo, SizeOf(StartupInfo));
   ZeroMemory(@ProcessInfo, SizeOf(ProcessInfo));
@@ -274,11 +278,28 @@ begin
   end;
 end;
 
+procedure TFCobolIDE.CodeEditorKeyPress(Sender: TObject; var Key: Char);
+begin
+  // Отмена ввода русских букв (кириллицы)
+  if (Key in ['А' .. 'я', 'Ё', 'ё']) then
+    Key := #0; // блокируем ввод
+end;
+
+procedure TFCobolIDE.CodeEditorKeyUp(Sender: TObject; var Key: Word;
+  Shift: TShiftState);
+var
+  CurrentLine: Integer;
+begin
+  CurrentLine := CodeEditor.Perform(EM_LINEFROMCHAR, CodeEditor.SelStart, 0);
+  HL.HighlightLine(CurrentLine);
+end;
+
 procedure TFCobolIDE.FormCreate(Sender: TObject);
 begin
   HL := TCobolHighlighter.Create(CodeEditor);
   SearchText := TfSearch.Create(Self);
   SearchText.Init(CodeEditor);
+  Self.BorderStyle := bsSizeable;
 end;
 
 procedure TFCobolIDE.FormDestroy(Sender: TObject);

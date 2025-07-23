@@ -1,8 +1,6 @@
 object FCobolIDE: TFCobolIDE
   Left = 0
   Top = 0
-  Align = alClient
-  AutoSize = True
   Caption = 'FCobolIDE'
   ClientHeight = 840
   ClientWidth = 1141
@@ -32,6 +30,8 @@ object FCobolIDE: TFCobolIDE
     ScrollBars = ssVertical
     TabOrder = 0
     OnKeyDown = CodeEditorKeyDown
+    OnKeyPress = CodeEditorKeyPress
+    OnKeyUp = CodeEditorKeyUp
   end
   object CompileLog: TMemo
     Left = 0
